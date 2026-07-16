@@ -1,0 +1,31 @@
+[project]
+name = "satellite-ground"
+version = "0.1.0"
+description = "Ground station and analysis tools for the LEO satellite thermal/power digital twin"
+requires-python = ">=3.11"
+dependencies = [
+    "matplotlib>=3.8",
+    "numpy>=1.26",
+    "pyyaml>=6.0.3",
+]
+
+[dependency-groups]
+dev = [
+    "clang-format==22.1.8",
+    "pytest>=8",
+    "ruff>=0.6",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["ground"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]

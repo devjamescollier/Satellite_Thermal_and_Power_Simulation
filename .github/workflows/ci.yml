@@ -1,0 +1,60 @@
+# Build the C++, run the C++ and Python tests, check formatting and lint, and build the images.
+# clang-format and ruff come from uv's lockfile, so CI and local runs use the same versions.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: uv sync --locked
+
+      - name: Lint Python (ruff)
+        run: uv run ruff check ground tests tools
+
+      - name: Check C++ formatting (clang-format)
+        run: |
+          uv run clang-format --dry-run --Werror \
+            common/*.hpp sim/*.cpp sim/*.hpp fsw/*.cpp fsw/*.hpp tools/*.cpp tests/*.cpp
+
+      - name: Build
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j
+
+      - name: C++ tests (ctest)
+        run: ctest --test-dir build --output-on-failure --exclude-regex '^pytest$'
+
+      - name: Python tests (pytest)
+        run: uv run pytest
+
+  # Builds all three images on the x86 Linux runner (local builds are arm64 macOS).
+  # Uses docker build, not compose, because docker-compose.yml needs .env values.
+  docker-images:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build images
+        run: |
+          docker build -f sim/Dockerfile -t satsim-sim .
+          docker build -f fsw/Dockerfile -t satsim-fsw .
+          docker build -f ground/Dockerfile -t satsim-station .
+
+      - name: Smoke-check the images
+        run: |
+          timeout 60 docker run --rm satsim-sim --orbits 0.001 --speed 0
+          timeout 60 docker run --rm --entrypoint python satsim-station \
+            -c "import sys; sys.path.insert(0, 'ground'); import station, alerts, downlink"

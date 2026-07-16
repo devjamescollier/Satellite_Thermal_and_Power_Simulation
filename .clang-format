@@ -1,0 +1,6 @@
+# C++ style, checked in CI: uv run clang-format --dry-run --Werror <files>
+BasedOnStyle: Google
+ColumnLimit: 100
+AllowShortIfStatementsOnASingleLine: AllIfsAndElse
+AllowShortBlocksOnASingleLine: Always
+AllowShortLoopsOnASingleLine: true
