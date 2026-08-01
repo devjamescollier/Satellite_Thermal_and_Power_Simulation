@@ -1,0 +1,97 @@
+# The whole stack: InfluxDB 2.7 (telemetry store), Grafana (dashboards, alerts), and the
+# flight software, simulator and ground station. `docker compose up` starts everything;
+# the sim runs SIM_ORBITS orbits at SIM_SPEED (default 3 at 60x) and exits.
+# scripts/run_demo.sh starts only influxdb and grafana and runs the rest on the host.
+# Credentials come from .env (copy .env.example). Ports bind to localhost only.
+services:
+  influxdb:
+    image: influxdb:2.7.11
+    ports:
+      - "127.0.0.1:8086:8086"
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUX_USERNAME:?set in .env}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUX_PASSWORD:?set in .env}
+      DOCKER_INFLUXDB_INIT_ORG: ${INFLUX_ORG:?set in .env}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUX_BUCKET:?set in .env}
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_TOKEN:?set in .env}
+      DOCKER_INFLUXDB_INIT_RETENTION: 7d
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  grafana:
+    image: grafana/grafana-oss:11.4.0
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:?set in .env}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set in .env}
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/provisioning/dashboards/mission_control.json
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_LOG_FILTERS: ${GF_LOG_FILTERS:-}  # e.g. ngalert.notifier.alertmanager:debug logs deliveries
+      # Read by the provisioning files under grafana/provisioning/.
+      INFLUX_ORG: ${INFLUX_ORG}
+      INFLUX_BUCKET: ${INFLUX_BUCKET}
+      INFLUX_TOKEN: ${INFLUX_TOKEN}
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-https://discord.com/api/webhooks/0/not-configured}
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health | grep -q ok"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  # fsw, sim and station talk over 127.0.0.1 (common/udp.hpp), so sim and station join
+  # the fsw container's network namespace and share its loopback.
+  fsw:
+    build: {context: ., dockerfile: fsw/Dockerfile}
+    image: satsim-fsw
+    init: true  # PID 1 ignores SIGTERM without a handler; the init forwards it
+    healthcheck:  # sensors port 5001 (0x1389) bound
+      test: ["CMD-SHELL", "grep -q ':1389 ' /proc/net/udp"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  station:
+    build: {context: ., dockerfile: ground/Dockerfile}
+    image: satsim-station
+    network_mode: service:fsw
+    depends_on:
+      fsw:
+        condition: service_healthy
+      influxdb:
+        condition: service_healthy
+    environment:
+      INFLUX_URL: http://influxdb:8086
+      INFLUX_ORG: ${INFLUX_ORG}
+      INFLUX_BUCKET: ${INFLUX_BUCKET}
+      INFLUX_TOKEN: ${INFLUX_TOKEN}
+    volumes:
+      - ./docs/reports:/app/docs/reports  # procedure reports from `docker compose exec`
+    stop_grace_period: 10s  # SIGTERM: the station flushes, then exits
+
+  sim:
+    build: {context: ., dockerfile: sim/Dockerfile}
+    image: satsim-sim
+    init: true  # PID 1 ignores SIGTERM without a handler; the init forwards it
+    network_mode: service:fsw
+    depends_on:
+      station:
+        condition: service_started
+    command: ["--orbits", "${SIM_ORBITS:-3}", "--speed", "${SIM_SPEED:-60}"]
+    restart: "no"
+
+volumes:
+  influxdb-data:
+  grafana-data:
