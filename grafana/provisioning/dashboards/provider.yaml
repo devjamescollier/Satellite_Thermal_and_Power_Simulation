@@ -1,0 +1,11 @@
+# Loads every dashboard JSON in this directory (mission_control.json is generated
+# by tools/gen_grafana.py). UI edits are disabled: change the generator instead.
+apiVersion: 1
+providers:
+  - name: mission
+    folder: Mission Control
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    options:
+      path: /etc/grafana/provisioning/dashboards
