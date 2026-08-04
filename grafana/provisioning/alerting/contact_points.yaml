@@ -1,0 +1,14 @@
+# One webhook contact point. The URL comes from ALERT_WEBHOOK_URL in .env.
+# The type is "discord" so a Discord channel webhook works directly; for a generic
+# JSON webhook receiver change the type to "webhook".
+apiVersion: 1
+contactPoints:
+  - orgId: 1
+    name: mission-webhook
+    receivers:
+      - uid: mission-webhook
+        type: discord
+        settings:
+          url: ${ALERT_WEBHOOK_URL}
+          use_discord_username: false
+        disableResolveMessage: false
