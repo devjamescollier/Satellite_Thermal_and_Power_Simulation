@@ -1,0 +1,9 @@
+# Route every alert to the mission webhook.
+apiVersion: 1
+policies:
+  - orgId: 1
+    receiver: mission-webhook
+    group_by: ["alertname"]
+    group_wait: 10s
+    group_interval: 1m
+    repeat_interval: 1h
